@@ -4,8 +4,8 @@ import com.fawry.utilities.Log;
 import io.appium.java_client.AppiumDriver;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
-import org.openqa.selenium.support.ui.WebDriverWait;
 import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
 
 import java.time.Duration;
 import java.util.*;
@@ -13,31 +13,16 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class By extends org.openqa.selenium.By {
 
-    // Static driver shared by all locator instances
     private static AppiumDriver driver;
-
-    // Original locator reference
     private final org.openqa.selenium.By originalBy;
-
-    // Cache for healed locators
     private static final Map<String, org.openqa.selenium.By> healedCache = new ConcurrentHashMap<>();
-    
-    // Default wait timeout (in seconds)
-    private static final int DEFAULT_WAIT_TIMEOUT = 10;
-    
-    // Wait time for scrolling/swiping to complete (in milliseconds)
-    private static final int SCROLL_WAIT_TIME_MS = 500;
+    private static final Duration DEFAULT_WAIT = Duration.ofSeconds(10);
 
-    // ====== Constructor & Driver Setter ======
     private By(org.openqa.selenium.By by) {
         this.originalBy = by;
     }
 
-    public static void setDriver(AppiumDriver appiumDriver) {
-        driver = appiumDriver;
-    }
-
-    // ====== Supported Web Locator Factories ======
+    // Factory methods
     public static By xpath(String xpath) { return new By(org.openqa.selenium.By.xpath(xpath)); }
     public static By id(String id) { return new By(org.openqa.selenium.By.id(id)); }
     public static By name(String name) { return new By(org.openqa.selenium.By.name(name)); }
@@ -47,39 +32,39 @@ public class By extends org.openqa.selenium.By {
     public static By linkText(String linkText) { return new By(org.openqa.selenium.By.linkText(linkText)); }
     public static By partialLinkText(String partialLinkText) { return new By(org.openqa.selenium.By.partialLinkText(partialLinkText)); }
 
-    // ====== Element Search ======
+    public static void setDriver(AppiumDriver appiumDriver) {
+        driver = appiumDriver;
+    }
+
     @Override
     public WebElement findElement(SearchContext context) {
-        String locatorKey = originalBy.toString();
-        
-        // First, wait for scrolling/swiping to complete
-        waitForScrollOrSwipeToComplete();
-        
-        try {
-            // Check if we have a cached healed locator
-            if (healedCache.containsKey(locatorKey)) {
-                org.openqa.selenium.By cachedBy = healedCache.get(locatorKey);
-                return waitForElementVisibility(cachedBy, context);
-            }
-            
-            // Try with original locator, wait for visibility first
-            return waitForElementVisibility(originalBy, context);
-            
-        } catch (NoSuchElementException | TimeoutException | InvalidElementStateException e) {
-            Log.info("⚠️ Element issue detected for locator: " + locatorKey);
-            Log.info("🧠 Triggering healing process...");
-            
-            // Wait for scrolling/swiping before healing
-            waitForScrollOrSwipeToComplete();
-            
-            org.openqa.selenium.By healedBy = healLocator(locatorKey);
+        String locatorKey = this.originalBy.toString();
 
+        try {
+            if (!HealingContext.isHealingEnabled()) {
+                return this.originalBy.findElement(context);
+            }
+
+            if (healedCache.containsKey(locatorKey)) {
+                return healedCache.get(locatorKey).findElement(context);
+            }
+
+            // Normal explicit wait before triggering healing
+            WebDriverWait wait = new WebDriverWait(driver, DEFAULT_WAIT);
+            return wait.until(ExpectedConditions.presenceOfElementLocated(this.originalBy));
+
+        } catch (TimeoutException | InvalidElementStateException | NoSuchElementException e) {
+            Log.info("⚠️ Element not found after wait for locator: " + locatorKey);
+            Log.info("🔁 Attempting healing...");
+
+            // Trigger healing process after normal wait timeout
+            org.openqa.selenium.By healedBy = this.healLocator(locatorKey);
             if (healedBy != null) {
                 healedCache.put(locatorKey, healedBy);
                 Log.info("✅ Healing successful. Cached healed locator: " + healedBy);
-                
-                // Wait for healed element to be visible
-                return waitForElementVisibility(healedBy, context);
+
+                WebDriverWait wait = new WebDriverWait(driver, DEFAULT_WAIT);
+                return wait.until(ExpectedConditions.presenceOfElementLocated(healedBy));
             }
 
             throw new NoSuchElementException("❌ Failed to heal locator: " + locatorKey, e);
@@ -88,161 +73,40 @@ public class By extends org.openqa.selenium.By {
 
     @Override
     public List<WebElement> findElements(SearchContext context) {
-        String locatorKey = originalBy.toString();
-        
-        // First, wait for scrolling/swiping to complete
-        waitForScrollOrSwipeToComplete();
-        
-        try {
-            // Check if we have a cached healed locator
-            if (healedCache.containsKey(locatorKey)) {
-                org.openqa.selenium.By cachedBy = healedCache.get(locatorKey);
-                return waitForElementsVisibility(cachedBy, context);
-            }
-            
-            // Try with original locator, wait for visibility first
-            return waitForElementsVisibility(originalBy, context);
-            
-        } catch (NoSuchElementException | TimeoutException | InvalidElementStateException e) {
-            Log.info("⚠️ Elements issue detected for locator: " + locatorKey);
-            Log.info("🧠 Triggering healing process...");
-            
-            // Wait for scrolling/swiping before healing
-            waitForScrollOrSwipeToComplete();
-            
-            org.openqa.selenium.By healedBy = healLocator(locatorKey);
+        String locatorKey = this.originalBy.toString();
 
+        try {
+            if (!HealingContext.isHealingEnabled()) {
+                return this.originalBy.findElements(context);
+            }
+
+            if (healedCache.containsKey(locatorKey)) {
+                return healedCache.get(locatorKey).findElements(context);
+            }
+
+            WebDriverWait wait = new WebDriverWait(driver, DEFAULT_WAIT);
+            return wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(this.originalBy));
+
+        } catch (TimeoutException | InvalidElementStateException | NoSuchElementException e) {
+            Log.info("⚠️ Elements not found after wait for locator: " + locatorKey);
+            Log.info("🔁 Attempting healing...");
+
+            org.openqa.selenium.By healedBy = this.healLocator(locatorKey);
             if (healedBy != null) {
                 healedCache.put(locatorKey, healedBy);
                 Log.info("✅ Healing successful for elements. Cached healed locator: " + healedBy);
-                
-                // Wait for healed elements to be visible
-                return waitForElementsVisibility(healedBy, context);
+
+                WebDriverWait wait = new WebDriverWait(driver, DEFAULT_WAIT);
+                return wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(healedBy));
             }
 
             throw new NoSuchElementException("❌ Failed to heal elements for locator: " + locatorKey, e);
         }
     }
 
-    // ====== Wait Utilities ======
-    
     /**
-     * Waits for scrolling or swiping animations to complete by checking if page source stabilizes.
+     * Heal locator using AIIntegrationService
      */
-    private void waitForScrollOrSwipeToComplete() {
-        if (driver == null) {
-            return;
-        }
-        
-        try {
-            String previousPageSource = driver.getPageSource();
-            Thread.sleep(SCROLL_WAIT_TIME_MS);
-            
-            int maxAttempts = 5;
-            int attempt = 0;
-            while (attempt < maxAttempts) {
-                String currentPageSource = driver.getPageSource();
-                if (currentPageSource.equals(previousPageSource)) {
-                    // Page source is stable, scrolling/swiping is complete
-                    Log.info("✅ Scrolling/swiping completed - page source is stable");
-                    return;
-                }
-                previousPageSource = currentPageSource;
-                Thread.sleep(SCROLL_WAIT_TIME_MS);
-                attempt++;
-            }
-            Log.info("⚠️ Scrolling/swiping may still be in progress, proceeding anyway");
-        } catch (Exception e) {
-            Log.info("⚠️ Error checking scroll/swipe completion: " + e.getMessage());
-            // Continue anyway - don't block execution
-        }
-    }
-    
-    /**
-     * Waits for element to be visible before returning it.
-     */
-    private WebElement waitForElementVisibility(org.openqa.selenium.By by, SearchContext context) {
-        // If context is WebDriver/AppiumDriver, use WebDriverWait
-        if (context instanceof WebDriver) {
-            try {
-                WebDriverWait wait = new WebDriverWait((WebDriver) context, Duration.ofSeconds(DEFAULT_WAIT_TIMEOUT));
-                return wait.until(ExpectedConditions.presenceOfElementLocated(by));
-            } catch (TimeoutException e) {
-                // If wait times out, try direct findElement as fallback
-                Log.info("⚠️ Wait for visibility timed out, trying direct findElement");
-                return by.findElement(context);
-            }
-        }
-        
-        // If context is WebElement (nested search), try with retries
-        if (context instanceof WebElement) {
-            int maxRetries = 3;
-            for (int i = 0; i < maxRetries; i++) {
-                try {
-                    WebElement element = by.findElement(context);
-                    // Check if element is displayed
-                    if (element.isDisplayed()) {
-                        return element;
-                    }
-                } catch (NoSuchElementException e) {
-                    if (i < maxRetries - 1) {
-                        try {
-                            Thread.sleep(500); // Wait 500ms before retry
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
-                        }
-                        continue;
-                    }
-                    throw e;
-                }
-            }
-        }
-        
-        // Fallback: direct findElement
-        return by.findElement(context);
-    }
-    
-    /**
-     * Waits for elements to be visible before returning them.
-     */
-    private List<WebElement> waitForElementsVisibility(org.openqa.selenium.By by, SearchContext context) {
-        // If context is WebDriver/AppiumDriver, use WebDriverWait
-        if (context instanceof WebDriver) {
-            try {
-                WebDriverWait wait = new WebDriverWait((WebDriver) context, Duration.ofSeconds(DEFAULT_WAIT_TIMEOUT));
-                wait.until(ExpectedConditions.presenceOfElementLocated(by));
-                // After waiting for at least one element, return all found elements
-                return by.findElements(context);
-            } catch (TimeoutException e) {
-                // If wait times out, try direct findElements as fallback
-                Log.info("⚠️ Wait for visibility timed out, trying direct findElements");
-                return by.findElements(context);
-            }
-        }
-        
-        // If context is WebElement (nested search), try with retries
-        if (context instanceof WebElement) {
-            int maxRetries = 3;
-            for (int i = 0; i < maxRetries; i++) {
-                List<WebElement> elements = by.findElements(context);
-                if (!elements.isEmpty()) {
-                    return elements;
-                }
-                if (i < maxRetries - 1) {
-                    try {
-                        Thread.sleep(500); // Wait 500ms before retry
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                    }
-                }
-            }
-        }
-        
-        // Fallback: direct findElements
-        return by.findElements(context);
-    }
-    
-    // ====== Healing Logic ======
     private org.openqa.selenium.By healLocator(String rawLocator) {
         try {
             if (driver == null) {
@@ -250,9 +114,8 @@ public class By extends org.openqa.selenium.By {
                 return null;
             }
 
-            Log.info("📱 Healing locator type: " + originalBy.getClass().getSimpleName() + " -> " + rawLocator);
+            Log.info("🤖 Healing locator: " + rawLocator);
 
-            // Clean the locator text for AI input
             String cleanedLocator = rawLocator
                     .replace("By.xpath: ", "")
                     .replace("By.id: ", "")
@@ -264,21 +127,40 @@ public class By extends org.openqa.selenium.By {
                     .replace("By.partialLinkText: ", "")
                     .trim();
 
-            // Generate XML snapshot of the current page
+            // Generate XML snapshot
             XmlGenerator xmlGenerator = new XmlGenerator();
             xmlGenerator.setDriver(driver);
             xmlGenerator.clearXmlSnapshotsDirectory();
             xmlGenerator.generatePageXML();
 
-            // Send locator to AI for analysis and repair
-            List<String> healedLocators = new AIIntegrationService().autoAnalyzeAndFix(List.of(cleanedLocator));
+            // Call AI to analyze and fix locator
+            String healedLocator = new AIIntegrationService().autoAnalyzeAndFix(cleanedLocator);
+            if (healedLocator != null && !healedLocator.isEmpty()) {
+                Log.info("🌐 AI returned healed locator: " + healedLocator);
 
-            if (healedLocators != null && !healedLocators.isEmpty()) {
-                String healedXpath = healedLocators.get(0).trim();
-                Log.info("🌐 Returning healed locator: " + healedXpath);
-                return org.openqa.selenium.By.xpath(healedXpath);
+                if (healedLocator.startsWith("By.id(")) {
+                    String value = healedLocator.substring(7, healedLocator.length() - 2);
+                    return org.openqa.selenium.By.id(value);
+                } else if (healedLocator.startsWith("By.xpath(")) {
+                    String value = healedLocator.substring(9, healedLocator.length() - 2);
+                    return org.openqa.selenium.By.xpath(value);
+                } else if (healedLocator.startsWith("By.name(")) {
+                    String value = healedLocator.substring(8, healedLocator.length() - 2);
+                    return org.openqa.selenium.By.name(value);
+                } else if (healedLocator.startsWith("By.cssSelector(")) {
+                    String value = healedLocator.substring(15, healedLocator.length() - 2);
+                    return org.openqa.selenium.By.cssSelector(value);
+                } else if (healedLocator.startsWith("By.className(")) {
+                    String value = healedLocator.substring(13, healedLocator.length() - 2);
+                    return org.openqa.selenium.By.className(value);
+                } else if (healedLocator.startsWith("By.tagName(")) {
+                    String value = healedLocator.substring(11, healedLocator.length() - 2);
+                    return org.openqa.selenium.By.tagName(value);
+                } else {
+                    Log.info("⚠️ Unknown locator type, defaulting to XPath");
+                    return org.openqa.selenium.By.xpath(healedLocator);
+                }
             }
-
         } catch (Exception e) {
             Log.info("❌ Healing process failed for locator: " + rawLocator);
             e.printStackTrace();
@@ -289,6 +171,6 @@ public class By extends org.openqa.selenium.By {
 
     @Override
     public String toString() {
-        return "ByHealable(" + originalBy.toString() + ")";
+        return "ByHealable(" + this.originalBy.toString() + ")";
     }
 }
