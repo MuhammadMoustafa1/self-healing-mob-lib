@@ -6,7 +6,7 @@
 
     <groupId>com.fawry</groupId>
     <artifactId>self-healing-lib</artifactId>
-    <version>1.6.4</version>
+    <version>1.6.5</version>
     <packaging>jar</packaging>
 
     <name>self-healing-lib</name>

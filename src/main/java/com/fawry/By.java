@@ -39,11 +39,11 @@ public class By extends org.openqa.selenium.By {
     @Override
     public WebElement findElement(SearchContext context) {
         String locatorKey = this.originalBy.toString();
-
+        if (!HealingContext.isHealingEnabled()) {
+            return this.originalBy.findElement(context);
+        }
         try {
-            if (!HealingContext.isHealingEnabled()) {
-                return this.originalBy.findElement(context);
-            }
+
 
             if (healedCache.containsKey(locatorKey)) {
                 return healedCache.get(locatorKey).findElement(context);
@@ -74,11 +74,11 @@ public class By extends org.openqa.selenium.By {
     @Override
     public List<WebElement> findElements(SearchContext context) {
         String locatorKey = this.originalBy.toString();
-
+        if (!HealingContext.isHealingEnabled()) {
+            return this.originalBy.findElements(context);
+        }
         try {
-            if (!HealingContext.isHealingEnabled()) {
-                return this.originalBy.findElements(context);
-            }
+
 
             if (healedCache.containsKey(locatorKey)) {
                 return healedCache.get(locatorKey).findElements(context);
